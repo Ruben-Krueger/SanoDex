@@ -17,6 +17,7 @@ from vocode.streaming.streaming_conversation import StreamingConversation
 from vocode.streaming.synthesizer.azure_synthesizer import AzureSynthesizer
 from vocode.streaming.transcriber.deepgram_transcriber import DeepgramTranscriber
 import os
+from sanodex import SanoDexAgent
 
 configure_pretty_logging()
 
@@ -53,34 +54,40 @@ async def main():
         use_default_devices=False,
     )
 
-    conversation = StreamingConversation(
-        output_device=speaker_output,
-        transcriber=DeepgramTranscriber(
-            DeepgramTranscriberConfig.from_input_device(
-                microphone_input,
-                endpointing_config=PunctuationEndpointingConfig(),
-                api_key=settings.deepgram_api_key,
-            ),
-        ),
-        agent=ChatGPTAgent(
-            ChatGPTAgentConfig(
-                openai_api_key=settings.openai_api_key,
-                initial_message=BaseMessage(text="Hello, thank you for calling SanoDex. How may I help you?"),
-                prompt_preamble="""The AI is answering calls for a healthcare practice""",
-            )
-        ),
-        synthesizer=AzureSynthesizer(
-            AzureSynthesizerConfig.from_output_device(speaker_output),
-            azure_speech_key=settings.azure_speech_key,
-            azure_speech_region=settings.azure_speech_region,
-        ),
-    )
-    await conversation.start()
-    print("Conversation started, press Ctrl+C to end")
-    signal.signal(signal.SIGINT, lambda _0, _1: asyncio.create_task(conversation.terminate()))
-    while conversation.is_active():
-        chunk = await microphone_input.get_audio()
-        conversation.receive_audio(chunk)
+    vocode_config = VocodeConfig(stt_config=stt_config, tts_config=tts_config)
+    phone_agent = SmartPhoneAgent()
+    vocode = Vocode(config=vocode_config, agent=phone_agent)
+    vocode.run()
+
+
+    # conversation = StreamingConversation(
+    #     output_device=speaker_output,
+    #     transcriber=DeepgramTranscriber(
+    #         DeepgramTranscriberConfig.from_input_device(
+    #             microphone_input,
+    #             endpointing_config=PunctuationEndpointingConfig(),
+    #             api_key=settings.deepgram_api_key,
+    #         ),
+    #     ),
+    #     # agent=ChatGPTAgent(
+    #     #     ChatGPTAgentConfig(
+    #     #         openai_api_key=settings.openai_api_key,
+    #     #         initial_message=BaseMessage(text="Hello, thank you for calling SanoDex. How may I help you?"),
+    #     #         prompt_preamble="""The AI is answering calls for a healthcare practice""",
+    #     #     )
+    #     agent=SanoDexAgent(),
+    #     synthesizer=AzureSynthesizer(
+    #         AzureSynthesizerConfig.from_output_device(speaker_output),
+    #         azure_speech_key=settings.azure_speech_key,
+    #         azure_speech_region=settings.azure_speech_region,
+    #     ),
+    # )
+    # await conversation.start()
+    # print("Conversation started, press Ctrl+C to end")
+    # signal.signal(signal.SIGINT, lambda _0, _1: asyncio.create_task(conversation.terminate()))
+    # while conversation.is_active():
+    #     chunk = await microphone_input.get_audio()
+    #     conversation.receive_audio(chunk)
 
 
 if __name__ == "__main__":
