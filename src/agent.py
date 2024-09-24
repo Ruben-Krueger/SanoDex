@@ -1,11 +1,13 @@
 
 from twilio.twiml.voice_response import VoiceResponse
 import logging
+from config.settings import Settings
 from services.acs_client import ACSClient
 from services.stt_service import SpeechToTextService
 from services.tts_service import TextToSpeechService
 from services.openai_service import OpenAIService
 from twilio.rest import Client
+import requests
 
 from datetime import datetime
 
@@ -40,21 +42,35 @@ class Agent:
         return self.start_time and not self.end_time
 
     def send_email(self):
-        # TODO: send email
-        self.response.say("I've sent you an email with these details")
+        try:
+            requests.post(
+            "https://api.mailgun.net/v3/sandboxac1342976f5b4f45a6640b5b1abc5a84.mailgun.org/messages",
+            auth=("api", Settings.MAILGUN_API_KEY),
+            data={"from": "SanoDex <mailgun@sandboxac1342976f5b4f45a6640b5b1abc5a84.mailgun.org>",
+                "to": ["rubenkrueger99@gmail.com"],
+                "subject": "Hello",
+                "text": "Here are your appointment details: "})
+            self.response.say("I've sent you an email with these details")
+        except error as Exception:
+            logging.error(error)
+            self.response.say("I'm sorry, I wasn't able to send an email.")
 
     def end_conversation(self):
         self.send_email()
         self.end_time = datetime.now()
 
-    def extract_information(self, user_input):
+    def extract_information_from_text(self, user_input):
         # Instruct ChatGPT to handle complex cases and extract data intelligently
         prompt = f"""
-        A caller is providing information about themselves. Extract their name and date of birth if provided:
+        You are a helpful AI assistant for a healthcare practice. A caller is providing information about themselves. Extract the following information from a caller:
         - If the caller says their name, capture it as 'name'.
-        - If the caller mentions their date of birth, capture it as 'dob'.
-        Example input: 'My name is John Doe and I was born on March 3, 1995'
-        Expected output: name='John Doe', dob='March 3, 1995'
+        - If the caller says their date of birth, capture it as 'dob'.
+        - If the caller says they have a referral, capture it as 'referral'
+        - If the caller says their chief complaint or reason they need to see the doctor, capture it as 'chief_complaint'
+        - If the caller says their address, capture it as 'address'
+        - If the caller says their phone, capture it as 'phone'
+        - If the caller says a date they can book an appointent for, capture it as 'date'
+        - If the caller says a time they can book an appointent for, capture it as 'time'
         
         Input: '{user_input}'
         """
@@ -67,18 +83,24 @@ class Agent:
 
     def handle_conversation(self):
         # Get audio from the Twilio request (You will need Twilio Media Streams for real-time audio)
-        audio_url = request.form.get('RecordingUrl')
+        # audio_url = request.form.get('RecordingUrl')
 
-        if audio_url:
-            # Use the STT service to convert speech to text from Twilio Recording URL
-            user_text = stt_service.recognize_speech_from_audio(audio_url)
+        while not self.has_required_data():
+            self.extract_information()
 
-            # Get response from OpenAI
-            ai_response = openai_service.get_openai_response(user_text)
+        self.end_conversation()
+
+
+        # if audio_url:
+        #     # Use the STT service to convert speech to text from Twilio Recording URL
+        #     user_text = stt_service.recognize_speech_from_audio(audio_url)
+
+        #     # Get response from OpenAI
+        #     ai_response = openai_service.get_openai_response(user_text)
             
-            # Convert AI response to speech and play it back to the caller
-            response.say(ai_response)
-        else:
-            response.say("Sorry, we could not process your request.")
+        #     # Convert AI response to speech and play it back to the caller
+        #     response.say(ai_response)
+        # else:
+        #     response.say("Sorry, we could not process your request.")
 
-        return str(response)
+        # return str(response)
