@@ -3,23 +3,29 @@ import logging
 import pyaudio
 import tkinter as tk
 from tkinter import ttk
+import threading
+from tts import TTS
 
-# Number of frames per buffer (1024 frames = 2048 bytes at 16-bit = 64ms at 16kHz)
-CHUNK = 1024
+# Audio settings for Vosk (must match server settings)
+CHUNK = 1536  # Match the chunk size used by Vosk
 FORMAT = pyaudio.paInt16
 CHANNELS = 1
-RATE = 16000
+RATE = 16000  # Must be 16kHz for Vosk
 
 
 class Client:
-
     def __init__(self):
-         # Configure logging
+        # Configure logging
         logging.basicConfig(
             level=logging.INFO,
             format='%(asctime)s - %(levelname)s - %(message)s'
         )
         self.ws = None
+        self.is_streaming = False
+        self.stream = None
+        self.audio = None
+
+        self.tts = TTS()
 
     def start(self):
         logging.info("Starting WebSocket client")
@@ -30,44 +36,85 @@ class Client:
             on_close=self.on_close,    
             on_error=self.on_error
         )
-        self.ws.run_forever()
-
+        # Run WebSocket connection in a separate thread
+        self.ws_thread = threading.Thread(target=self.ws.run_forever)
+        self.ws_thread.daemon = True
+        self.ws_thread.start()
 
     def on_open(self, ws):
-        print("Streaming mic input...")
-        p = pyaudio.PyAudio()
-        stream = p.open(format=FORMAT, channels=CHANNELS, rate=RATE, input=True, frames_per_buffer=CHUNK)
+        logging.info("WebSocket connection established")
+        self.start_streaming()
 
+    def start_streaming(self):
+        logging.info("Starting audio stream...")
         try:
-            while True:
-                data = stream.read(CHUNK)
-                logging.info("Read chunk of audio")
-                ws.send(data, opcode=websocket.ABNF.OPCODE_BINARY)
-                logging.info("Sent chunk of audio")
-        except KeyboardInterrupt:
-            logging.info("Stopping...")
-            stream.stop_stream()
-            stream.close()
-            p.terminate()
-            ws.close()
+            self.is_streaming = True
+            self.audio = pyaudio.PyAudio()
+            self.stream = self.audio.open(
+                format=FORMAT, 
+                channels=CHANNELS, 
+                rate=RATE, 
+                input=True, 
+                frames_per_buffer=CHUNK
+            )
+
+            # Run audio streaming in a separate thread
+            self.stream_thread = threading.Thread(target=self.stream_audio)
+            self.stream_thread.daemon = True
+            self.stream_thread.start()
 
         except Exception as e:
-            logging.error(f"Error: {e}")
-            stream.stop_stream()
-            stream.close()
-            p.terminate()
-            ws.close()
+            logging.error(f"Error starting audio stream: {e}")
+            self.stop_streaming()
 
+    def stream_audio(self):
+        try:
+            while self.is_streaming and self.ws and self.ws.sock and self.ws.sock.connected:
+                data = self.stream.read(CHUNK, exception_on_overflow=False)
+                if data and self.ws and self.ws.sock and self.ws.sock.connected:
+                    self.ws.send(data, opcode=websocket.ABNF.OPCODE_BINARY)
+        except Exception as e:
+            logging.error(f"Error in audio streaming: {e}")
+        finally:
+            self.stop_streaming()
+
+    def stop_streaming(self):
+        logging.info("Stopping stream...")
+        self.is_streaming = False
+        
+        if self.stream:
+            try:
+                self.stream.stop_stream()
+                self.stream.close()
+            except Exception as e:
+                logging.error(f"Error closing audio stream: {e}")
+            self.stream = None
+
+        if self.audio:
+            try:
+                self.audio.terminate()
+            except Exception as e:
+                logging.error(f"Error terminating audio: {e}")
+            self.audio = None
+
+        if self.ws:
+            try:
+                self.ws.close()
+            except Exception as e:
+                logging.error(f"Error closing WebSocket: {e}")
+            self.ws = None
 
     def on_message(self, ws, message):
         logging.info(f"Received: {message}")
-
+        self.tts.say(message)
 
     def on_close(self, ws, close_status_code, close_msg):
-        logging.info("Connection closed")
+        logging.info(f"Connection closed (status code: {close_status_code}, message: {close_msg})")
+        self.stop_streaming()
 
     def on_error(self, ws, error):
-        logging.error(f"Error: {error}")
+        logging.error(f"WebSocket error: {error}")
+        self.stop_streaming()
 
 
 class ClientUI:
@@ -100,9 +147,6 @@ class ClientUI:
         self.client = Client()
 
     def handle_call(self):
-        # This will be implemented later to handle the call functionality
-        print("Call button pressed")
-
         self.client.start()
 
     def run(self):

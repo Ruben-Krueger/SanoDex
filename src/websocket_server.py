@@ -2,23 +2,36 @@ import asyncio
 import websockets
 import logging
 import os
-from flask_socketio import SocketIO
-
+from stt import STT
+import json
+from agent import Agent
 # Configuration
 HOST = os.getenv('WEBSOCKET_HOST', '0.0.0.0')  # Accept connections from any IP
 PORT = int(os.getenv('WEBSOCKET_PORT', 8765))
-SSL_CERT = os.getenv('SSL_CERT_PATH')  # Path to SSL certificate if using WSS
-SSL_KEY = os.getenv('SSL_KEY_PATH')    # Path to SSL key if using WSS
+SSL_CERT = os.getenv('SSL_CERT_PATH') 
+SSL_KEY = os.getenv('SSL_KEY_PATH')
+
+STT_MODEL_PATH = os.getenv('STT_MODEL_PATH')
 
 async def handle_audio(websocket, path):
     client_address = websocket.remote_address
     logging.info(f"New connection from {client_address}")
+
+    agent = Agent()
+
     try:
-        async for message in websocket:
-            # Handle the streamed audio data here
-            # For example, send the audio to a speech-to-text engine
-            logging.info(f"Received audio frame from {client_address}")
-            await websocket.send("Received audio")
+        with STT(STT_MODEL_PATH) as stt:
+            async for message in websocket:
+                # Process the incoming audio data through STT
+                if stt.recognizer.AcceptWaveform(message):
+                    result = json.loads(stt.recognizer.Result())
+                    text = result["text"].strip()
+                    if text:
+                        logging.info(f"Transcribed text from {client_address}: '{text}'")
+                        response = agent.handle_message(text)
+                        await websocket.send(response)
+                        logging.info(f"Sent response to {client_address}: '{response}'")
+
     except websockets.exceptions.ConnectionClosed:
         logging.info(f"Client {client_address} disconnected")
     except Exception as e:
