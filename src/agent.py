@@ -11,16 +11,6 @@ from openai import OpenAI
 
 from datetime import datetime
 
-logging.basicConfig(level = logging.INFO)
-
-# Initialize services
-acs_client = ACSClient(Settings.ACS_CONNECTION_STRING)
-stt_service = SpeechToTextService(Settings.AZURE_SPEECH_KEY, Settings.AZURE_REGION)
-tts_service = TextToSpeechService(Settings.AZURE_SPEECH_KEY, Settings.AZURE_REGION)
-openai_service = OpenAI(api_key=Settings.OPENAI_API_KEY,)
-
-twilio_client = Client(Settings.TWILIO_ACCOUNT_SID, Settings.TWILIO_AUTH_TOKEN)
-
 required_fields = ["name", "dob", "referral", "physician", "chief_complaint", "address", "phone", "date", "time"]
 
 class Agent:
@@ -32,6 +22,17 @@ class Agent:
 
         self.start_time = None
         self.end_time = None
+
+        logging.basicConfig(level = logging.INFO)
+
+        # Initialize services
+        acs_client = ACSClient(Settings.ACS_CONNECTION_STRING)
+        stt_service = SpeechToTextService(Settings.AZURE_SPEECH_KEY, Settings.AZURE_REGION)
+        tts_service = TextToSpeechService(Settings.AZURE_SPEECH_KEY, Settings.AZURE_REGION)
+        openai_service = OpenAI(api_key=Settings.OPENAI_API_KEY,)
+
+        twilio_client = Client(Settings.TWILIO_ACCOUNT_SID, Settings.TWILIO_AUTH_TOKEN)
+
 
     def say(self, text):
         self.response.say(text)
